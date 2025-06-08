@@ -58,17 +58,15 @@ class EnergyDataset(Dataset):
 
 
 class LSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers=1, dropout=0.0):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
         super(LSTM, self).__init__()
         self.lstm = nn.LSTM(
             input_size, hidden_size, num_layers=num_layers, batch_first=True
         )
         self.fc = nn.Linear(hidden_size, output_size)
-        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
-        lstm_out, _ = self.lstm(x)
-        lstm_out = self.dropout(lstm_out)
+    def forward(self, x): # x: (batch_size, seq_len, input_size)
+        lstm_out, _ = self.lstm(x) # lstm_out: (batch_size, seq_len, hidden_size)
         out = self.fc(lstm_out[:, -1, :])
         return out
 
@@ -140,13 +138,13 @@ def train_model(
 if __name__ == "__main__":
     WINDOW_SIZE = 64  # Number of time steps to use as input sequence
     PREDICT_AHEAD = 1  # Number of time steps to predict into the future
-    STEP_SIZE = 4  # Number of time steps to skip between samples
+    STEP_SIZE = WINDOW_SIZE  # Number of time steps to skip between samples
     BATCH_SIZE = 32  # Number of samples per training batch
     DEVICE = (
         "cuda" if torch.cuda.is_available() else "cpu"
     )  # Use GPU if available, otherwise CPU
     HIDDEN_SIZE = 64  # Number of hidden units in LSTM layer
-    DEBUG = 5  # 0 for no debug, otherwise use first N columns
+    DEBUG = 10  # 0 for no debug, otherwise use first N columns
     EPOCHS = 10  # Number of training epochs
     LR = 0.0001  # Learning rate for optimizer
     WEIGHT_DECAY = 0.0001  # L2 regularization parameter
