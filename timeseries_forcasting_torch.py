@@ -1,4 +1,5 @@
-from load_preprocess_data import load_and_preprocess_data
+import numpy as np
+from data_processing import load_and_preprocess_data, plot_predictions
 import torch
 from torch.utils.data import DataLoader, Dataset
 import torch.nn as nn
@@ -6,7 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from pprint import pformat
-
+from collections import defaultdict
 
 class EnergyDataset(Dataset):
     def __init__(
@@ -42,7 +43,7 @@ class EnergyDataset(Dataset):
             + self.predict_ahead,
             client_idx,
         ].values
-        return data.reshape(-1, 1), target
+        return data.reshape(-1, 1), target, client_idx
 
     def __repr__(self):
         instance_vars = {
@@ -82,9 +83,7 @@ def get_data_loader(
     step_size=1,
 ):
     dataset = EnergyDataset(df, unnormalize_fn, window_size, predict_ahead, step_size)
-    if show_stats:
-        print(dataset)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle), dataset
 
 
 def train_model(
@@ -106,7 +105,7 @@ def train_model(
         epoch_train_loss = 0
         epoch_test_loss = 0
         model.train()
-        for data, target in tqdm(train_loader):
+        for data, target, _ in tqdm(train_loader):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
             output = model(data)
@@ -119,7 +118,7 @@ def train_model(
 
         model.eval()
         with torch.no_grad():
-            for data, target in tqdm(test_loader):
+            for data, target, _ in tqdm(test_loader):
                 data, target = data.to(device), target.to(device)
                 output = model(data)
                 epoch_test_loss += criterion(output, target).item()
@@ -135,6 +134,27 @@ def train_model(
     return model, train_losses, test_losses
 
 
+def generate_predictions(model, test_loader, unnormalize_fn, device):
+    model.eval()
+    predictions = defaultdict(list)
+    ground_truth = defaultdict(list)
+    
+    with torch.no_grad():
+        for data, target, client_idx in tqdm(test_loader):
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            pred_batch = unnormalize_fn(output.cpu().numpy()) 
+            truth_batch = unnormalize_fn(target.cpu().numpy())
+            
+            # Store predictions and ground truth for each client
+            for i, client_id in enumerate(client_idx):
+                client_id = client_id.item()
+                predictions[client_id].append(pred_batch[i])
+                ground_truth[client_id].append(truth_batch[i])
+    
+    return predictions, ground_truth
+
+
 if __name__ == "__main__":
     WINDOW_SIZE = 64  # Number of time steps to use as input sequence
     PREDICT_AHEAD = 1  # Number of time steps to predict into the future
@@ -144,16 +164,15 @@ if __name__ == "__main__":
         "cuda" if torch.cuda.is_available() else "cpu"
     )  # Use GPU if available, otherwise CPU
     HIDDEN_SIZE = 64  # Number of hidden units in LSTM layer
-    DEBUG = 10  # 0 for no debug, otherwise use first N columns
-    EPOCHS = 10  # Number of training epochs
-    LR = 0.0001  # Learning rate for optimizer
+    DEBUG = 2  # 0 for no debug, otherwise use first N columns
+    EPOCHS = 50  # Number of training epochs
+    LR = 0.001  # Learning rate for optimizer
     WEIGHT_DECAY = 0.0001  # L2 regularization parameter
 
     print("Loading data...")
     datafile = Path(__file__).parent / "data" / "LD2011_2014.txt"
     df_train, df_test, unnormalize_fn = load_and_preprocess_data(datafile, debug=DEBUG)
-    print("\n\nDATASET STATS")
-    train_dl = get_data_loader(
+    train_dl, train_dataset = get_data_loader(
         df_train,
         unnormalize_fn,
         window_size=WINDOW_SIZE,
@@ -161,13 +180,16 @@ if __name__ == "__main__":
         batch_size=BATCH_SIZE,
         step_size=STEP_SIZE,
     )
-    test_dl = get_data_loader(
+    test_dl, test_dataset = get_data_loader(
         df_test,
         unnormalize_fn,
         window_size=WINDOW_SIZE,
         predict_ahead=PREDICT_AHEAD,
         batch_size=BATCH_SIZE,
     )
+    print("\n\nDATASET STATS")
+    print(train_dataset)
+    print(test_dataset)
     print("\n\n")
 
     print("Creating model...")
@@ -187,4 +209,11 @@ if __name__ == "__main__":
     plt.plot(train_losses, label="Train Loss")
     plt.plot(test_losses, label="Test Loss")
     plt.legend()
+    plt.title("MSE Loss per epoch")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
     plt.show()
+
+    print("Generating predictions...")
+    predictions, ground_truth = generate_predictions(model, test_dl, unnormalize_fn, DEVICE)
+    plot_predictions(predictions, ground_truth)

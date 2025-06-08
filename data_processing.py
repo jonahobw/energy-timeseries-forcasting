@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+
 
 def load_and_preprocess_data(file_path, train_test_split=0.8, standardization="iqr", debug=0):
     assert standardization in ["mean_std", "iqr"], "Invalid standardization method"
@@ -44,3 +46,23 @@ def load_and_preprocess_data(file_path, train_test_split=0.8, standardization="i
         unnormalize_fn = lambda x: (x * iqr + median).astype(np.float32)
 
     return df_train, df_test, unnormalize_fn
+
+
+def plot_predictions(predictions, ground_truth, max_clients=5):
+    plt.figure(figsize=(12, 6))
+    
+    # Get list of client IDs and limit to max_clients
+    client_ids = list(predictions.keys())[:max_clients]
+    
+    # Plot each client's predictions and ground truth
+    for i, client_id in enumerate(client_ids):
+        color = f'C{i}'  # Use same color for each client
+        plt.plot(ground_truth[client_id], color=color, label=f'Client {client_id}', alpha=0.7)
+        plt.plot(predictions[client_id], color=color, linestyle='--', alpha=0.7)
+    
+    plt.title("Predictions vs Ground Truth")
+    plt.xlabel('Time Step')
+    plt.ylabel('Value') 
+    plt.legend()
+    plt.grid(True)
+    plt.show()
