@@ -9,7 +9,9 @@ from pprint import pformat
 
 
 class EnergyDataset(Dataset):
-    def __init__(self, df, unnormalize_fn, window_size=10, predict_ahead=1, step_size=1):
+    def __init__(
+        self, df, unnormalize_fn, window_size=10, predict_ahead=1, step_size=1
+    ):
         self.df = df
         self.unnormalize_fn = unnormalize_fn
         self.window_size = window_size
@@ -17,13 +19,21 @@ class EnergyDataset(Dataset):
         self.num_clients = df.shape[1]
         self.length = (len(df) - window_size - predict_ahead + 1) * self.num_clients
         self.step_size = step_size
+        # Calculate how many samples we can get per client given the step_size
+        max_start_idx = len(df) - window_size - predict_ahead
+        self.samples_per_client = max(0, (max_start_idx // step_size) + 1)
+        self.length = self.samples_per_client * self.num_clients
 
     def __len__(self):
         return self.length
 
     def __getitem__(self, idx):
-        time_idx = idx // self.num_clients
-        client_idx = idx % self.num_clients
+        # Calculate which client and which sample within that client
+        client_idx = idx // self.samples_per_client
+        sample_idx = idx % self.samples_per_client
+
+        # Calculate the actual time index using step_size
+        time_idx = sample_idx * self.step_size
         data = self.df.iloc[time_idx : time_idx + self.window_size, client_idx].values
         target = self.df.iloc[
             time_idx
@@ -36,12 +46,13 @@ class EnergyDataset(Dataset):
 
     def __repr__(self):
         instance_vars = {
-            'window_size': self.window_size,
-            'predict_ahead': self.predict_ahead,
-            'num_clients': self.num_clients,
-            'length': self.length,
-            'step_size': self.step_size,
-            'df_shape': self.df.shape
+            "window_size": self.window_size,
+            "predict_ahead": self.predict_ahead,
+            "num_clients": self.num_clients,
+            "length": self.length,
+            "step_size": self.step_size,
+            "df_shape": self.df.shape,
+            "samples_per_client": self.samples_per_client,
         }
         return pformat(instance_vars)
 
@@ -63,9 +74,16 @@ class LSTM(nn.Module):
 
 
 def get_data_loader(
-    df, unnormalize_fn, window_size=10, predict_ahead=1, batch_size=32, shuffle=False, show_stats=True
+    df,
+    unnormalize_fn,
+    window_size=10,
+    predict_ahead=1,
+    batch_size=32,
+    shuffle=False,
+    show_stats=True,
+    step_size=1,
 ):
-    dataset = EnergyDataset(df, unnormalize_fn, window_size, predict_ahead)
+    dataset = EnergyDataset(df, unnormalize_fn, window_size, predict_ahead, step_size)
     if show_stats:
         print(dataset)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
@@ -120,14 +138,17 @@ def train_model(
 
 
 if __name__ == "__main__":
-    WINDOW_SIZE = 64      # Number of time steps to use as input sequence
-    PREDICT_AHEAD = 1     # Number of time steps to predict into the future
-    BATCH_SIZE = 32      # Number of samples per training batch
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # Use GPU if available, otherwise CPU
-    HIDDEN_SIZE = 64     # Number of hidden units in LSTM layer
-    DEBUG = 2            # 0 for no debug, otherwise use first N columns
-    EPOCHS = 10         # Number of training epochs
-    LR = 0.001         # Learning rate for optimizer
+    WINDOW_SIZE = 64  # Number of time steps to use as input sequence
+    PREDICT_AHEAD = 1  # Number of time steps to predict into the future
+    STEP_SIZE = 4  # Number of time steps to skip between samples
+    BATCH_SIZE = 32  # Number of samples per training batch
+    DEVICE = (
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )  # Use GPU if available, otherwise CPU
+    HIDDEN_SIZE = 64  # Number of hidden units in LSTM layer
+    DEBUG = 5  # 0 for no debug, otherwise use first N columns
+    EPOCHS = 10  # Number of training epochs
+    LR = 0.0001  # Learning rate for optimizer
     WEIGHT_DECAY = 0.0001  # L2 regularization parameter
 
     print("Loading data...")
@@ -135,7 +156,12 @@ if __name__ == "__main__":
     df_train, df_test, unnormalize_fn = load_and_preprocess_data(datafile, debug=DEBUG)
     print("\n\nDATASET STATS")
     train_dl = get_data_loader(
-        df_train, unnormalize_fn, window_size=WINDOW_SIZE, predict_ahead=PREDICT_AHEAD, batch_size=BATCH_SIZE
+        df_train,
+        unnormalize_fn,
+        window_size=WINDOW_SIZE,
+        predict_ahead=PREDICT_AHEAD,
+        batch_size=BATCH_SIZE,
+        step_size=STEP_SIZE,
     )
     test_dl = get_data_loader(
         df_test,
