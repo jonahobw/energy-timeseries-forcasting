@@ -1,10 +1,13 @@
 import io
-from pathlib import Path
 import zipfile
+from pathlib import Path
+
 import requests
 
 # Homepage: https://archive.ics.uci.edu/dataset/321/electricityloaddiagrams20112014
-dataset_url = "https://archive.ics.uci.edu/static/public/321/electricityloaddiagrams20112014.zip"
+dataset_url = (
+    "https://archive.ics.uci.edu/static/public/321/electricityloaddiagrams20112014.zip"
+)
 
 # Download the dataset
 response = requests.get(dataset_url)

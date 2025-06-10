@@ -1,10 +1,12 @@
+from collections import defaultdict
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras import layers, models
-import matplotlib.pyplot as plt
-from pathlib import Path
-from data_processing import load_and_preprocess_data, plot_predictions
-from collections import defaultdict
 from tqdm import tqdm
+
+from data_processing import load_and_preprocess_data, plot_predictions
 
 
 class EnergyDataset(tf.keras.utils.Sequence):
@@ -30,7 +32,7 @@ class EnergyDataset(tf.keras.utils.Sequence):
         max_start_idx = len(df) - window_size - predict_ahead
         self.samples_per_client = max(0, (max_start_idx // step_size) + 1)
         self.total_samples = self.samples_per_client * self.num_clients
-        
+
         # Create all possible indices
         self.indices = [
             (client_idx, sample_idx)
@@ -47,7 +49,7 @@ class EnergyDataset(tf.keras.utils.Sequence):
         start_idx = index * self.batch_size
         end_idx = min(start_idx + self.batch_size, self.total_samples)
         batch_indices = self.indices[start_idx:end_idx]
-        
+
         X_batch, y_batch = [], []
 
         for client_idx, sample_idx in batch_indices:
@@ -68,16 +70,14 @@ class EnergyDataset(tf.keras.utils.Sequence):
         return tf.convert_to_tensor(X_batch, dtype=tf.float32), tf.convert_to_tensor(
             y_batch, dtype=tf.float32
         )
-    
+
     def get_client_data(self, client_idx):
         """Yields (X, y) batches for a single client."""
         assert 0 <= client_idx < self.num_clients, f"Invalid client index: {client_idx}"
-        
+
         # Get all sample indices for this client
         client_indices = [
-            (c_idx, s_idx)
-            for c_idx, s_idx in self.indices
-            if c_idx == client_idx
+            (c_idx, s_idx) for c_idx, s_idx in self.indices if c_idx == client_idx
         ]
 
         for i in range(0, len(client_indices), self.batch_size):
@@ -105,7 +105,6 @@ class EnergyDataset(tf.keras.utils.Sequence):
             )
 
 
-
 def build_lstm_model(input_size, hidden_size, output_size):
     model = models.Sequential(
         [
@@ -120,16 +119,18 @@ def build_lstm_model(input_size, hidden_size, output_size):
 def generate_predictions(model, test_gen, unnormalize_fn):
     predictions = defaultdict(list)
     ground_truth = defaultdict(list)
-    
+
     for client in tqdm(range(test_gen.num_clients)):
-        
+
         for x, y in test_gen.get_client_data(client):
             pred_batch = model.predict(x)
-            pred_batch = pred_batch.numpy() if hasattr(pred_batch, 'numpy') else pred_batch
-            y_batch = y.numpy() if hasattr(y, 'numpy') else y
+            pred_batch = (
+                pred_batch.numpy() if hasattr(pred_batch, "numpy") else pred_batch
+            )
+            y_batch = y.numpy() if hasattr(y, "numpy") else y
             predictions[client].extend(unnormalize_fn(pred_batch.flatten()))
             ground_truth[client].extend(unnormalize_fn(y_batch.flatten()))
-    
+
     return predictions, ground_truth
 
 

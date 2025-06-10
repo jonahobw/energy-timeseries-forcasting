@@ -1,13 +1,16 @@
-import numpy as np
-from data_processing import load_and_preprocess_data, plot_predictions
-import torch
-from torch.utils.data import DataLoader, Dataset
-import torch.nn as nn
-from pathlib import Path
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-from pprint import pformat
 from collections import defaultdict
+from pathlib import Path
+from pprint import pformat
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
+from data_processing import load_and_preprocess_data, plot_predictions
+
 
 class EnergyDataset(Dataset):
     def __init__(
@@ -66,8 +69,8 @@ class LSTM(nn.Module):
         )
         self.fc = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x): # x: (batch_size, seq_len, input_size)
-        lstm_out, _ = self.lstm(x) # lstm_out: (batch_size, seq_len, hidden_size)
+    def forward(self, x):  # x: (batch_size, seq_len, input_size)
+        lstm_out, _ = self.lstm(x)  # lstm_out: (batch_size, seq_len, hidden_size)
         out = self.fc(lstm_out[:, -1, :])
         return out
 
@@ -138,20 +141,20 @@ def generate_predictions(model, test_loader, unnormalize_fn, device):
     model.eval()
     predictions = defaultdict(list)
     ground_truth = defaultdict(list)
-    
+
     with torch.no_grad():
         for data, target, client_idx in tqdm(test_loader):
             data, target = data.to(device), target.to(device)
             output = model(data)
-            pred_batch = unnormalize_fn(output.cpu().numpy()) 
+            pred_batch = unnormalize_fn(output.cpu().numpy())
             truth_batch = unnormalize_fn(target.cpu().numpy())
-            
+
             # Store predictions and ground truth for each client
             for i, client_id in enumerate(client_idx):
                 client_id = client_id.item()
                 predictions[client_id].append(pred_batch[i])
                 ground_truth[client_id].append(truth_batch[i])
-    
+
     return predictions, ground_truth
 
 
@@ -215,5 +218,7 @@ if __name__ == "__main__":
     plt.show()
 
     print("Generating predictions...")
-    predictions, ground_truth = generate_predictions(model, test_dl, unnormalize_fn, DEVICE)
+    predictions, ground_truth = generate_predictions(
+        model, test_dl, unnormalize_fn, DEVICE
+    )
     plot_predictions(predictions, ground_truth)
